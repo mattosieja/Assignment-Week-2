@@ -1,0 +1,372 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+## R Packages needed
+library(readr)
+library(readxl)
+library(ggplot2)
+library(fpp2)
+library(psych)
+library(lmtest)
+library(seasonal)
+```
+
+
+```{r}
+#Chapter 5
+#Q1
+daily20 <- head(elecdaily,20)
+
+#a.
+autoplot(daily20, main="Electricity Demand for Victoria, Australia during 2014")
+lm(Demand~Temperature, data=elecdaily)
+summary(lm(Demand~Temperature, data=elecdaily))
+
+#Demand and temp have a low correlation. The p value of temp is considered a explantory variable of demand and has the value of .0654. temp shows a small increase throughout different points of the plot which causes high demand. the biggest increase we see in demand is when temp increases around "time 3"
+#b.
+plot(lm(Demand~Temperature, data=elecdaily))
+#It looks like a majority of values are outside ofth the cooks distance line which means the values have little value. looking at observation 15-17 you see that they are valuable to the regression results and shold be looked at more. for this plot it would be best to remove outliers
+
+#c
+
+DemTSLM <- tslm(Demand ~ Temperature, data=daily20)
+tempRange <- data.frame(Temperature=c(15,35))
+forecastDemTemp <- forecast(DemTSLM, tempRange)
+forecastDemTemp
+
+#the forecast seems reasonable especialy when compared to the deamnd values  from the training set. similat results can be found if you ran this forecast with the training data set.
+
+#d.
+autoplot(daily20, facets=TRUE)
+daily20 %>%
+  as.data.frame() %>%
+  ggplot(aes(x=Temperature, y=Demand)) +
+  geom_point() +
+  geom_smooth(method="lm", se=FALSE)
+fit <- tslm(Demand ~ Temperature, data=daily20)
+checkresiduals(fit)
+forecast(fit, newdata=data.frame(Temperature=c(15,35)))
+
+#these prediction values are reasonable estimates when compared to the training set.
+
+#e
+plot(Demand ~ Temperature, data=elecdaily, main="Demand vs. Temperature of Elecdaily dataset")
+
+#the plot above resembles the shape of the daily20 dataframe. The two sets of data share outliers from the residuals section. This proves that the subset of daily20 is a accurate representation of the full set of observations.
+
+#q2
+autoplot(mens400, main="Winning times for the Men's 400 meter Olympic Games Final", ylab="Time (Seconds)", xlab="Year")
+
+#there is definately a inverse relationship between race time per second and year. the time to win the 400 m dash had decreased consistanly over time. there are several spots on the graph that are blank due to NA values being in the data.
+
+#b.
+#change dataset to time series format
+time400 <- time(mens400)
+tslm(mens400 ~ time400, data=mens400)
+
+#winning time has decreased by .06457 each year.
+#add the regression line
+autoplot(mens400, main="Winning times for the Men's 400 meter Olympic Games Final", ylab="Time (Seconds)", xlab="Year") + geom_smooth(method="lm", se=FALSE)
+
+#c.
+mens400RG <- lm(mens400 ~ time400, data=mens400)
+plot(mens400RG)
+
+#the residuals vs. fitted graph show that the slow is decreasing and the winning persons times decrease at a decreasing rate each year. this shows that the fitted line is accurate for shortterm. This doesnt how ever help forecast future winning times.
+
+#d.
+
+TimeMens400 <- time(mens400)
+mens400LM <- lm(mens400 ~ TimeMens400, data=mens400, na.action=na.exclude)
+
+#e. remove the 3 na values
+Mens400F2022 <- forecast(mens400LM, newdata=data.frame(TimeMens400=2020))
+Mens400F2022
+
+#q3.
+easter(ausbeer)
+# I see a data set that has the quarterly values from 1956 to 2010, with the ending in q2 of 2010. Each value for the quarters seem to be between 0 and 1. Could it signify a percentage of probability of a specific event happening?
+
+#Q4
+#log(y) = β0 + β1log(x) + e
+#β1log(x) = log(y) - β0 - e
+#β1 = (log(y) - β0 - e) / log(x)              
+
+#q5
+autoplot(fancy, main="Sales Volume over Time", ylab="Sales Volume")
+seasonplot(fancy, main="Seasonal Sales Volume over Time", ylab="Sales Volume")
+
+#the graph shows seasonal trends in the sales. In each year around Nov and Dec you can see the spike in sales due to the holiday season. we also can see that in 1992 and 1993 something happened that caused extremely high growth and expansion.
+
+#b.
+#Patterns in data sets that are plotted can be tricky and may show heteroscedasticity errors. Meaning that the variance of the residuals may not be constant and actually could lead to more issues as you use the data to run more advanced regression.The transformation of using a logarith can help combat this issue.
+
+#c.
+## Creating a "surfing festival" dummy variable
+time <- time(fancy)
+
+surfingFestival <- c()
+for(i in 1:length(time)){
+  month <- round(12*(time[i] - floor(time[i]))) + 1
+  year <- floor(time[i])
+  if(year >= 1988 & month == 3) ## started March, 1998
+  {
+    surfingFestival[i] <- 1 ## Binary - 1 for if surfing festival is in town
+  } else {
+    surfingFestival[i] <- 0 ## 0 if the surfing festival is not in town
+  }
+}
+
+## Regression formula and output
+## Using BoxCox power transformation prior to regression formula
+fancyTrans <- (BoxCox(fancy, 0))
+fancyReg <- tslm(fancyTrans ~ trend + season + surfingFestival)
+summary(fancyReg)
+
+
+#d.
+autoplot(fancyReg$residuals, main="Residuals plot of fancyReg Resgression", ylab="Residuals")
+#looking at the plot the seasonality pattern exist still after the transformation. this is an issue for autocorrelation
+
+#e
+boxplot(fancyReg$residuals, main="fancyReg Regression Residuals")
+
+#f.
+fancyReg$coefficients
+
+#the surfing festival coefficent has a value of .5015 which shows a relative increase in sales during march. The trend coefficent is fairly low at .0220 but does show a small increase in sales. we definately see se a large increase in the coefficent around season 10 which is probably due to the result of the shop expansion during the time.
+library(lmtest)
+bgtest(fancyReg)
+
+#the output from the BG test tells a story about serial correlation in the regression model. The p value is extremely low which tells us the null hypothesis can be rejected. That does however mean heteroscedasticity exists in my model.
+
+#h. 
+timeRangeFancy <- ts(data=time, start=1994, end=c(1996,12), frequency=12)
+forecast(fancyReg, timeRangeFancy)
+
+#i.
+fancyTrans <- (BoxCox(fancy, 0))
+forecast(fancyTrans)
+
+#j.
+#the lambda function could start to improve these functions. the function BoxCox.Lambda(fancy) would be a good way to transform a regression model. A better transformation can caputre more exponential growth better.
+
+#q6.
+#a. I could not find the dataset easily according to documentation from the text is actually is named euretail. which is what i will end up using.
+gasoline2014 <- window(euretail, end=2005)
+autoplot(gasoline2014, main="Quarterly Retail Trade Index in the Euro area", xlab="Year", ylab="Thousand barrels per day")
+
+gasoline %>% tbats() %>% forecast() %>%
+  autoplot() + xlab("Year") + ylab("Thousand barrels per day")
+
+#b.
+gasolineCheck <- tslm(gasoline2014 ~ trend)
+gasolineCheck
+#c.
+checkresiduals(gasolineCheck)
+
+#d.
+gasolineF <- forecast(gasoline2014)
+gasolineF
+
+#e.
+autoplot(gasolineF)
+
+#the range of the forecast is pretty small which will lead to a more accurate forecast. using the 95% internal makes a much smaller / tighter prediction range.
+
+#q7
+autoplot(huron, main="Mean July Average Water Surface Elevation", ylab="Feet", xlab="Year")
+# the plot shows a negative trend in water level between 1880 and 1986. This data also has seasonaility. The lowest level was around 1960 and the highest being around 1880.
+
+#b
+
+tslm(huron ~ trend)
+
+huronRG1 <- tslm(huron ~ trend)
+
+tHuron <- time(huron)
+tHuron15 <- 1915
+
+tHuronSection <- ts(pmax(0,tHuron-tHuron15), start=1875)
+
+#c
+
+## Forecast 1
+huronRG1 <- tslm(huron ~ trend)
+forecast(huronRG1, h=8)
+
+## Forecast 2
+huronRG2 <- tslm(huron ~ tHuronSection)
+forecast(tHuronSection, h=8)
+
+# the two forecast swho some differences but both have different formatting aswell. Overall i see a increasing trend in both.
+```
+
+
+```{r}
+#chapter 6
+#q1
+
+## Centered moving averages can be smoothed by another moving average. This creates a double moving average. In the case of a 3x5 moving average, this signifies a 3 moving average of a 5 moving average. 
+
+## Weights = c(0.067, 0.133, 0.200, 0.200, 0.200, 0.133, 0.067)
+
+## 3x5 MA = [((Y1 + Y2 + Y3 + Y4 + Y5)/5) + ((Y2 + Y3 + Y4 + Y5 + Y6)/5) + ((Y3 + Y4 + Y5 + Y6 + Y7)/5)] / 3
+## Plugging in these values proves that the 3x5 moving average is equal to a 7-term weighted moving average
+
+
+#q2
+#a.
+autoplot(plastics, main="Monthly sales of Product A", xlab="Year", ylab="Sales (thousands")
+
+#the plot shows seasonality of sale in the beginning and end parts of the year. sales then to be lower in the beginning of the year and higher towards the end.
+
+#b
+plastics %>% decompose(type="multiplicative") %>%
+  autoplot() + xlab("Year") +
+  ggtitle("Monthly sales of Product A")
+
+#c.
+
+#the results definately do support the statements from part a. it shows both the seasonality and the slight upward positive trend.
+
+#d
+autoplot(plastics, main="Monthly sales of Product A", ylab="Sales (Thousands)", xlab="Year") + autolayer(snaive(plastics, h=30), series="Seasonal Naïve", PI=FALSE) + autolayer(naive(plastics, h=30), series="Naïve", PI=FALSE) + autolayer(rwf(plastics, h=30), series="Drift", PI=FALSE)
+
+#e
+plasticsAdd <- plastics
+plasticsAdd[15] <- plasticsAdd[15] + 500
+
+autoplot(plasticsAdd, main="Monthly sales of Product A (Modified Value 15)", ylab="Sales (Thousands)", xlab="Year") + autolayer(snaive(plasticsAdd, h=30), series="Seasonal Naïve", PI=FALSE) + autolayer(naive(plasticsAdd, h=30), series="Naïve", PI=FALSE) + autolayer(rwf(plasticsAdd, h=30), series="Drift", PI=FALSE)
+
+#the values forecasted stay stable with only the addition of 500 units to value 15. this supports the accurate nature  of the seasonally adjusted data prediction.
+
+
+#f.
+## Add 500 to end Value
+plasticsAddEnd <- plastics
+plasticsAddEnd[40] <- plasticsAddEnd[40] + 500
+
+autoplot(plasticsAddEnd, main="Monthly sales of Product A (Modified Value 40)", ylab="Sales (Thousands)", xlab="Year") + autolayer(snaive(plasticsAddEnd, h=30), series="Seasonal Naïve", PI=FALSE) + autolayer(naive(plasticsAddEnd, h=30), series="Naïve", PI=FALSE) + autolayer(rwf(plasticsAddEnd, h=30), series="Drift", PI=FALSE)
+# adding an outlier probably shifted the end value up slightly but not in a significant manner. overall outliers should always be evaluated for validity when using multiplicative decomposition.
+
+#3.
+library(readxl)
+retail <- read_excel("retail.xlsx",skip=1)
+## Creating a time series of the imported data
+retailTS <- ts(retail[,"A3349873A"], frequency=12, start=c(1982, 3))
+#plot
+autoplot(retailTS, main="Monthly Austrailian Retail Sales", ylab="Sales", xlab="Year")
+
+## X11 Decomposition
+library(seasonal)
+retailx11 <- seas(retailTS, x11="")
+
+autoplot(retailx11, main="X11 Decomposition on Monthly Austrailian Retail Sales", xlab="Year")
+
+#outliers are shown in the bottom remainder plot. Major outliers are 1989,'94,2001,2012.
+
+#q4
+#a
+
+#Decomposition shows the results of the # of people in the civilian labour force from Austrialia each month from Feb '78 to Aug '95. Right off the bat we see a strong postive trend of the number of workers during this time period. The seasonality chart does show the growth is cyclical and has strong seasonality. There also are some major outliers that are in the data around '92. I think more research would be needed to explain the increase in labourers during this period. the second chart shows a very interesting look to the seasonal part of the months. We see a large increase in july and huge decrease in March.
+
+#b.
+
+#Above i talked about the large outliers, they would actually perfectly explain the results we see. The remainder plot does a great job at showing this.
+
+
+#q5
+#a
+autoplot(cangas, main="Monthly Canadian Gas Production", ylab="Gas Production (Billions)", xlab="Year")
+ggsubseriesplot(cangas, main="Monthly Canadian Gas Production", ylab="Gas Production (Billions)")
+ggseasonplot(cangas, main="Seasonal Plot: Monthly Canadian Gas Production", ylab="Gas Production (Billions)")
+
+
+#The seasonality probably is due to the fuel prices and demand during specific seasons. For example fuel consumption goes up in the summer since people travel more, which would lead to higher oil production. 
+
+
+#b.
+cangas %>%
+  stl(t.window=13, s.window="periodic", robust=TRUE) %>%
+  autoplot()
+
+
+#c.
+# The results are pretty similar but some there are some differences. the seasonality graph shows consistent sesaonality throught the years. The remainder plot provides some insight into the outlires that can be seen between '80 and '90. smaller outliers also appear between 1995 and 2005.
+
+
+#q6
+#a
+bricksq %>%
+  stl(t.window=26, s.window="periodic", robust=TRUE) %>%
+  autoplot()
+#b
+autoplot(bricksq, main="Monthly sales of Product A", ylab="Sales (Thousands)", xlab="Year") + autolayer(snaive(bricksq, h=30), series="Seasonal Naïve", PI=FALSE)
+
+#c
+autoplot(bricksq, main="Australian quarterly clay brick production. 1956–1994", ylab="Brick Production", xlab="Year")+ autolayer(naive(bricksq, h=30), series="Naïve", PI=FALSE)
+
+
+#d
+brickF1 <- stlf(bricksq)
+brickF1
+autoplot(brickF1)
+
+
+#e
+checkresiduals((brickF1))
+
+#f
+brickF1R <- stlf(bricksq, robust=TRUE)
+brickF1R
+autoplot(brickF1R)
+checkresiduals(brickF1R)
+
+
+#those functions seem to have reduced normality but the residuals still have autocorrelation issues.
+
+
+#g
+trainBrick <- subset(bricksq, end=length(bricksq) - 9)
+testBrick <- subset(bricksq, start=length(bricksq) - 8)
+
+sBrick <- snaive(trainBrick)
+stlfBrick <- stlf(trainBrick, robust=TRUE)
+## Plotting the results
+autoplot(sBrick)
+autoplot(stlfBrick)
+
+
+#The stlf function actually ends up creating less noise in the forecast and actually can be a better predictor of brick production.
+
+#q7
+## Plotting the dataset to evaluate which method to choose
+autoplot(writing)
+#i ended up choosing the drift method 
+stlf(writing, method='rwdrift')
+
+
+## Box Cox lambda
+writingBC <- stlf(writing, method='rwdrift', robust=TRUE, lambda = BoxCox.lambda(writing))
+autoplot(writingBC)
+
+
+#8
+autoplot(fancy)
+
+
+#the fancy dataset shows a similar trend and seasonality but in a positive trend.
+
+stlf(fancy,method='rwdrift')
+fancyBC <- stlf(fancy, method='rwdrift', robust=TRUE, lambda = BoxCox.lambda(fancy))
+autoplot(fancyBC)
+
+
+```
+
